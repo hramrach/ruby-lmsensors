@@ -1,0 +1,10 @@
+Makefile: extconf.rb depend
+	$(RUBY) extconf.rb
+
+include $(OBJS:.o=.d)
+
+SED ?= /usr/bin/sed
+
+%.d: %.c
+	$(Q) $(CC) -M -MG $(INCFLAGS) $(CPPFLAGS) $(CFLAGS) $< | \
+		$(SED) -e 's@^\(.*\)\.o:@$*.d $*.o: Makefile@' > $@
