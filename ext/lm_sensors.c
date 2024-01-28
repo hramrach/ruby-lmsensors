@@ -19,6 +19,19 @@ static VALUE lm_sensors_version()
 	return rb_str_new_static_cstr(libsensors_version);
 }
 
+/* StringValueCStr requires a lvalue, cannot be called on return value directly */
+static const char *class_name(VALUE obj)
+{
+	obj = rb_funcall(rb_funcall(obj, rb_intern("class"), 0), rb_intern("to_s"), 0);
+	return StringValueCStr(obj);
+}
+
+static const char *inspect_str(VALUE obj)
+{
+	obj = rb_funcall(obj, rb_intern("inspect"), 0);
+	return StringValueCStr(obj);
+}
+
 static void sensors_free(void * config)
 {
 	if (D) fprintf(stderr, "%s config %p\n", __FUNCTION__, config);
@@ -105,24 +118,104 @@ static VALUE sensor_chip_alloc(VALUE klass) /* somehow this is required although
 	return self;
 }
 
+/*
+ * Generic caching of wrapped singleton C data
+ * It is probably overkill for sensors - the data wrapper objects are about the size of the proxy cache objects.
+ * Nonethless, it's useful for debugging to get consistent objects, and in general to figure out how to cache.
+ * Very verbose debug prints are included.
+ */
+static VALUE cache_get(VALUE self, const char *var_name, const void *ptr)
+{
+	VALUE cache = rb_iv_get(self, var_name);
+	VALUE idx = RB_UINT2NUM((uintptr_t)ptr);
+	VALUE live = Qnil;
+	VALUE object;
+	const char *self_name = class_name(self);
+
+	if (D) fprintf(stderr, "%s %s %s %s 0x%016lx\n", __FUNCTION__,
+			self_name,
+			var_name,
+			class_name(cache),
+			cache); /* may contain stale weak references, cannot inspect */
+
+	if (cache == Qnil) { /* cache not initialized, create */
+		VALUE newcache = rb_funcall(rb_const_get(rb_cObject, rb_intern("Hash")), rb_intern("new"), 0);
+		/* use hidden instance variable not staritn with @ - it's not
+		 * visible to ruby code but the GC marks it automagically, no
+		 * need to do anything special on the C side */
+		rb_iv_set(self, var_name, newcache);
+		cache = newcache;
+		if (D) fprintf(stderr, "%s %s %s %s 0x%016lx\n",
+				__FUNCTION__,
+				self_name,
+				var_name,
+				class_name(cache),
+				cache);
+		return Qnil;
+	}
+
+	/* fetch weakref from cache */
+	object = rb_funcall(cache, rb_intern("[]"), 1, idx);
+	if (object != Qnil) /* a weakref was found but may be stale */
+		live = rb_funcall(object, rb_intern("weakref_alive?"), 0);
+
+	if (D) fprintf(stderr, "%s %s %s %p live %s\n",
+			__FUNCTION__,
+			self_name,
+			var_name,
+			ptr,
+			inspect_str(live));
+	if (live != Qfalse && live != Qnil) { /* stale weakref returns nil here */
+		/* get the original object from weakref, undocumented */
+		object = rb_funcall(object, rb_intern("__getobj__"), 0);
+		return object;
+	}
+
+	return Qnil;
+}
+
+static void cache_set(VALUE self, const char *var_name, const void *ptr, VALUE object)
+{
+	VALUE cache = rb_iv_get(self, var_name);
+	VALUE idx = RB_UINT2NUM((uintptr_t)ptr);
+	const char *self_name = class_name(self);
+	VALUE weakref;
+	if (D) fprintf(stderr, "%s %s %s %p %s\n",
+			__FUNCTION__,
+			self_name,
+			var_name,
+			ptr,
+			inspect_str(object));
+	weakref = rb_funcall(rb_const_get(rb_cObject, rb_intern("WeakRef")), rb_intern("new"), 1, object);
+	/* The cache was created when trying to get the object, assume it's available */
+	rb_funcall(cache, rb_intern("[]="), 2, idx, weakref);
+}
+
 static VALUE sensors_each_chip(VALUE self)
 {
-	/* FIXME this returns new objects wrapping the same chips each iteration, the chips should be cached/singleton */
 	if (D) dbg_inspect(__FUNCTION__, "self", self);
 
 	if (rb_block_given_p()) {
 		const sensors_chip_name *chip;
 		sensors_config *config;
 		int cnum = 0;
+		const char * chips_var = "chips";
 		TypedData_Get_Struct(self, sensors_config, &sensors_data, config);
 		if (D) fprintf(stderr, "%s config %p\n", __FUNCTION__, config);
 		while (!!(chip = sensors_get_detected_chips_r(config, NULL, &cnum))) {
 			VALUE chip_obj;
 			if (D) fprintf(stderr, "%s chip %p\n", __FUNCTION__, chip);
-			/* The chip objects do not have a ruby constructor, this is the only way to create them */
-			chip_obj = TypedData_Wrap_Struct(chip_class, &sensor_chip_data, (void *)chip);
-			if (D) dbg_inspect(__FUNCTION__, "chip", chip_obj);
-			rb_iv_set(chip_obj, "parent", self); /* invisible instance variable to keep config reference */
+			/* Already wrapped chip data is retrieved from object cache */
+			chip_obj = cache_get(self, chips_var, chip);
+			if (chip_obj != Qnil) {
+				if (D) dbg_inspect(__FUNCTION__, "cached chip", chip_obj);
+			} else {
+				/* The chip objects do not have a ruby constructor, this is the only way to create them */
+				chip_obj = TypedData_Wrap_Struct(chip_class, &sensor_chip_data, (void *)chip);
+				if (D) dbg_inspect(__FUNCTION__, "chip", chip_obj);
+				rb_iv_set(chip_obj, "parent", self); /* invisible instance variable to keep config reference */
+				cache_set(self, chips_var, chip, chip_obj);
+			}
 			rb_yield(chip_obj);
 		}
 	} else {
@@ -176,9 +269,11 @@ static VALUE sensor_chip_name(VALUE self)
 
 void Init_lm_sensors()
 {
-	VALUE klass = rb_define_class("LMSensors", rb_cObject);
-	rb_define_singleton_method(klass, "version", lm_sensors_version, 0);
+	VALUE klass;
+	rb_funcall(rb_cObject, rb_intern("require"), 1, rb_str_new_static_cstr("weakref"));
+	klass = rb_define_class("LMSensors", rb_cObject);
 	exc_class = rb_define_class_under(klass, "Error", rb_eRuntimeError);
+	rb_define_singleton_method(klass, "version", lm_sensors_version, 0);
 	rb_define_alloc_func(klass, sensors_alloc);
 	chip_class = rb_define_class_under(klass, "Chip", rb_cObject);
 	rb_define_alloc_func(chip_class, sensor_chip_alloc);
