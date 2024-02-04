@@ -56,6 +56,16 @@ static const rb_data_type_t sensor_chip_data = {
 	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
 };
 
+static const rb_data_type_t sensor_feature_data = {
+	.wrap_struct_name = "LMSensorsFeature",
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
+};
+
+static const rb_data_type_t sensor_subfeature_data = {
+	.wrap_struct_name = "LMSensorsSubFeature",
+	.flags = RUBY_TYPED_FREE_IMMEDIATELY,
+};
+
 static void dbg_inspect(const char *msg1, const char *msg2, VALUE object)
 {
 	VALUE str = rb_str_new_static_cstr(msg1);
@@ -69,6 +79,8 @@ static void dbg_inspect(const char *msg1, const char *msg2, VALUE object)
 }
 
 static VALUE chip_class = Qnil;
+static VALUE feature_class = Qnil;
+static VALUE subfeature_class = Qnil;
 static VALUE exc_class = Qnil;
 
 static VALUE sensors_alloc(VALUE klass)
@@ -113,6 +125,22 @@ static VALUE sensors_initialize(VALUE self, VALUE config_file)
 static VALUE sensor_chip_alloc(VALUE klass) /* somehow this is required although never used */
 {
 	VALUE self = TypedData_Wrap_Struct(klass, &sensor_chip_data, 0);
+	if (D) fprintf(stderr, "%s allocated value 0x%016lx\n", __FUNCTION__, self);
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+	return self;
+}
+
+static VALUE sensor_feature_alloc(VALUE klass) /* somehow this is required although never used */
+{
+	VALUE self = TypedData_Wrap_Struct(klass, &sensor_feature_data, 0);
+	if (D) fprintf(stderr, "%s allocated value 0x%016lx\n", __FUNCTION__, self);
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+	return self;
+}
+
+static VALUE sensor_subfeature_alloc(VALUE klass) /* somehow this is required although never used */
+{
+	VALUE self = TypedData_Wrap_Struct(klass, &sensor_subfeature_data, 0);
 	if (D) fprintf(stderr, "%s allocated value 0x%016lx\n", __FUNCTION__, self);
 	if (D) dbg_inspect(__FUNCTION__, "self", self);
 	return self;
@@ -214,9 +242,91 @@ static VALUE sensors_each_chip(VALUE self)
 				chip_obj = TypedData_Wrap_Struct(chip_class, &sensor_chip_data, (void *)chip);
 				if (D) dbg_inspect(__FUNCTION__, "chip", chip_obj);
 				rb_iv_set(chip_obj, "parent", self); /* invisible instance variable to keep config reference */
+				rb_iv_set(chip_obj, "config", self);
 				cache_set(self, chips_var, chip, chip_obj);
 			}
 			rb_yield(chip_obj);
+		}
+	} else {
+		/* do the enumerator magic, except in C */
+		return rb_funcall(self, rb_intern("to_enum"), 1, ID2SYM(rb_intern("each")));
+	}
+
+	return self;
+}
+
+static VALUE sensors_each_feature(VALUE self)
+{
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	if (rb_block_given_p()) {
+		const sensors_chip_name *chip;
+		VALUE config_obj;
+		sensors_config *config;
+		int fnum = 0;
+		const sensors_feature *feature;
+		const char * features_var = "features";
+		TypedData_Get_Struct(self, sensors_chip_name, &sensor_chip_data, chip);
+		config_obj = rb_iv_get(self, "config");
+		TypedData_Get_Struct(config_obj, sensors_config, &sensors_data, config);
+		if (D) fprintf(stderr, "%s config %p\n", __FUNCTION__, config);
+		while (!!(feature = sensors_get_features_r(config, chip, &fnum))) {
+			VALUE feature_obj;
+			if (D) fprintf(stderr, "%s feature %p\n", __FUNCTION__, feature);
+			feature_obj = cache_get(self, features_var, feature);
+			if (feature_obj != Qnil) {
+				if (D) dbg_inspect(__FUNCTION__, "cached feature", feature_obj);
+			} else {
+				feature_obj = TypedData_Wrap_Struct(feature_class, &sensor_feature_data, (void *)feature);
+				if (D) dbg_inspect(__FUNCTION__, "feature", feature_obj);
+				rb_iv_set(feature_obj, "config", config_obj);
+				rb_iv_set(feature_obj, "parent", self);
+				cache_set(self, features_var, feature, feature_obj);
+			}
+			rb_yield(feature_obj);
+		}
+	} else {
+		/* do the enumerator magic, except in C */
+		return rb_funcall(self, rb_intern("to_enum"), 1, ID2SYM(rb_intern("each")));
+	}
+
+	return self;
+}
+
+static VALUE sensors_each_subfeature(VALUE self)
+{
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	if (rb_block_given_p()) {
+		VALUE chip_obj;
+		const sensors_chip_name *chip;
+		VALUE config_obj;
+		sensors_config *config;
+		int fnum = 0;
+		const sensors_feature *feature;
+		const sensors_subfeature *subfeature;
+		const char * subfeatures_var = "subfeatures";
+		TypedData_Get_Struct(self, sensors_feature, &sensor_feature_data, feature);
+		config_obj = rb_iv_get(self, "config");
+		chip_obj = rb_iv_get(self, "parent");
+		TypedData_Get_Struct(config_obj, sensors_config, &sensors_data, config);
+		if (D) fprintf(stderr, "%s config %p\n", __FUNCTION__, config);
+		TypedData_Get_Struct(chip_obj, sensors_chip_name, &sensor_chip_data, chip);
+		if (D) fprintf(stderr, "%s chip %p\n", __FUNCTION__, chip);
+		while (!!(subfeature = sensors_get_all_subfeatures_r(config, chip, feature, &fnum))) {
+			VALUE subfeature_obj;
+			if (D) fprintf(stderr, "%s subfeature %p\n", __FUNCTION__, subfeature);
+			subfeature_obj = cache_get(self, subfeatures_var, subfeature);
+			if (subfeature_obj != Qnil) {
+				if (D) dbg_inspect(__FUNCTION__, "cached subfeature", subfeature_obj);
+			} else {
+				subfeature_obj = TypedData_Wrap_Struct(subfeature_class, &sensor_subfeature_data, (void *)subfeature);
+				if (D) dbg_inspect(__FUNCTION__, "subfeature", subfeature_obj);
+				rb_iv_set(subfeature_obj, "config", config_obj);
+				rb_iv_set(subfeature_obj, "parent", self);
+				cache_set(self, subfeatures_var, subfeature, subfeature_obj);
+			}
+			rb_yield(subfeature_obj);
 		}
 	} else {
 		/* do the enumerator magic, except in C */
@@ -267,6 +377,81 @@ static VALUE sensor_chip_name(VALUE self)
 	return result;
 }
 
+static VALUE sensor_feature_name(VALUE self)
+{
+	const sensors_feature *feature;
+
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	TypedData_Get_Struct(self, sensors_feature, &sensor_feature_data, feature);
+	if (D) fprintf(stderr, "%s feature %p\n", __FUNCTION__, feature);
+
+	return rb_str_new_static_cstr(feature->name); /* data is stored in config, reference held above */
+}
+
+static VALUE sensor_feature_label(VALUE self)
+{
+	const sensors_feature *feature;
+	const sensors_chip_name *chip;
+	sensors_config *config;
+	VALUE chip_obj, config_obj;
+	VALUE result;
+	char *label;
+
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	TypedData_Get_Struct(self, sensors_feature, &sensor_feature_data, feature);
+	config_obj = rb_iv_get(self, "config");
+	chip_obj = rb_iv_get(self, "parent");
+	TypedData_Get_Struct(config_obj, sensors_config, &sensors_data, config);
+	if (D) fprintf(stderr, "%s config %p\n", __FUNCTION__, config);
+	TypedData_Get_Struct(chip_obj, sensors_chip_name, &sensor_chip_data, chip);
+	if (D) fprintf(stderr, "%s chip %p\n", __FUNCTION__, chip);
+
+	label = sensors_get_label_r(config, chip, feature);
+	if (D) fprintf(stderr, "%s chip label %s\n", __FUNCTION__, label);
+	result = rb_str_new_cstr(label);
+	free(label);
+
+	return result;
+}
+
+static VALUE sensor_subfeature_name(VALUE self)
+{
+	const sensors_subfeature *subfeature;
+
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	TypedData_Get_Struct(self, sensors_subfeature, &sensor_subfeature_data, subfeature);
+	if (D) fprintf(stderr, "%s subfeature %p\n", __FUNCTION__, subfeature);
+
+	return rb_str_new_static_cstr(subfeature->name); /* data is stored in config, reference held above */
+}
+
+static VALUE sensor_subfeature_value(VALUE self)
+{
+	const sensors_subfeature *subfeature;
+	const sensors_chip_name *chip;
+	sensors_config *config;
+	VALUE chip_obj, config_obj;
+	double value;
+
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	TypedData_Get_Struct(self, sensors_subfeature, &sensor_subfeature_data, subfeature);
+	if (D) fprintf(stderr, "%s subfeature %p\n", __FUNCTION__, subfeature);
+	config_obj = rb_iv_get(self, "config");
+	TypedData_Get_Struct(config_obj, sensors_config, &sensors_data, config);
+	if (D) fprintf(stderr, "%s config %p\n", __FUNCTION__, config);
+	chip_obj = rb_iv_get(self, "parent");
+	chip_obj = rb_iv_get(chip_obj, "parent");
+	TypedData_Get_Struct(chip_obj, sensors_chip_name, &sensor_chip_data, chip);
+
+	sensors_get_value_r(config, chip, subfeature->number, &value);
+
+	return DBL2NUM(value);
+}
+
 void Init_lm_sensors()
 {
 	VALUE klass;
@@ -283,4 +468,18 @@ void Init_lm_sensors()
 	rb_define_method(klass, "each_chip", sensors_each_chip, 0);
 	rb_define_method(chip_class, "path", sensor_chip_path, 0);
 	rb_define_method(chip_class, "name", sensor_chip_name, 0);
+	rb_include_module(chip_class, rb_mEnumerable);
+	feature_class = rb_define_class_under(chip_class, "Feature", rb_cObject);
+	rb_define_method(chip_class, "each", sensors_each_feature, 0);
+	rb_define_method(chip_class, "each_feature", sensors_each_feature, 0);
+	rb_define_alloc_func(feature_class, sensor_feature_alloc);
+	rb_include_module(feature_class, rb_mEnumerable);
+	rb_define_method(feature_class, "name", sensor_feature_name, 0);
+	rb_define_method(feature_class, "label", sensor_feature_label, 0);
+	subfeature_class = rb_define_class_under(feature_class, "SubFeature", rb_cObject);
+	rb_define_alloc_func(subfeature_class, sensor_subfeature_alloc);
+	rb_define_method(feature_class, "each", sensors_each_subfeature, 0);
+	rb_define_method(feature_class, "each_subfeature", sensors_each_subfeature, 0);
+	rb_define_method(subfeature_class, "name", sensor_subfeature_name, 0);
+	rb_define_method(subfeature_class, "value", sensor_subfeature_value, 0);
 }
