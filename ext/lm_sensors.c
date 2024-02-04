@@ -348,6 +348,29 @@ static VALUE sensor_chip_path(VALUE self)
 	return rb_str_new_static_cstr(chip->path); /* data is stored in config, reference held above */
 }
 
+static VALUE sensor_chip_adapter(VALUE self)
+{
+	const sensors_chip_name *chip;
+	sensors_config *config;
+	VALUE config_obj;
+	const char *adapter;
+
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	TypedData_Get_Struct(self, sensors_chip_name, &sensor_chip_data, chip);
+	if (D) fprintf(stderr, "%s chip %p\n", __FUNCTION__, chip);
+
+	config_obj = rb_iv_get(self, "config");
+	TypedData_Get_Struct(config_obj, sensors_config, &sensors_data, config);
+	if (D) fprintf(stderr, "%s config %p\n", __FUNCTION__, config);
+
+	adapter = sensors_get_adapter_name_r(config, &chip->bus);
+
+	if (adapter)
+		return rb_str_new_static_cstr(adapter);
+	return Qnil;
+}
+
 static VALUE sensor_chip_name(VALUE self)
 {
 	const sensors_chip_name *chip;
@@ -399,12 +422,12 @@ static VALUE sensor_feature_label(VALUE self)
 	char *label;
 
 	if (D) dbg_inspect(__FUNCTION__, "self", self);
-
 	TypedData_Get_Struct(self, sensors_feature, &sensor_feature_data, feature);
+
 	config_obj = rb_iv_get(self, "config");
-	chip_obj = rb_iv_get(self, "parent");
 	TypedData_Get_Struct(config_obj, sensors_config, &sensors_data, config);
 	if (D) fprintf(stderr, "%s config %p\n", __FUNCTION__, config);
+	chip_obj = rb_iv_get(self, "parent");
 	TypedData_Get_Struct(chip_obj, sensors_chip_name, &sensor_chip_data, chip);
 	if (D) fprintf(stderr, "%s chip %p\n", __FUNCTION__, chip);
 
@@ -426,6 +449,30 @@ static VALUE sensor_subfeature_name(VALUE self)
 	if (D) fprintf(stderr, "%s subfeature %p\n", __FUNCTION__, subfeature);
 
 	return rb_str_new_static_cstr(subfeature->name); /* data is stored in config, reference held above */
+}
+
+static VALUE sensor_subfeature_quant(VALUE self)
+{
+	const sensors_subfeature *subfeature;
+
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	TypedData_Get_Struct(self, sensors_subfeature, &sensor_subfeature_data, subfeature);
+	if (D) fprintf(stderr, "%s subfeature %p\n", __FUNCTION__, subfeature);
+
+	return rb_str_new_static_cstr(sensors_get_quantity_name(sensors_get_subfeature_quantity(subfeature->type)));
+}
+
+static VALUE sensor_subfeature_unit(VALUE self)
+{
+	const sensors_subfeature *subfeature;
+
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	TypedData_Get_Struct(self, sensors_subfeature, &sensor_subfeature_data, subfeature);
+	if (D) fprintf(stderr, "%s subfeature %p\n", __FUNCTION__, subfeature);
+
+	return rb_str_new_static_cstr(sensors_get_quantity_unit(sensors_get_subfeature_quantity(subfeature->type)));
 }
 
 static VALUE sensor_subfeature_value(VALUE self)
@@ -467,6 +514,7 @@ void Init_lm_sensors()
 	rb_define_method(klass, "each", sensors_each_chip, 0);
 	rb_define_method(klass, "each_chip", sensors_each_chip, 0);
 	rb_define_method(chip_class, "path", sensor_chip_path, 0);
+	rb_define_method(chip_class, "adapter", sensor_chip_adapter, 0);
 	rb_define_method(chip_class, "name", sensor_chip_name, 0);
 	rb_include_module(chip_class, rb_mEnumerable);
 	feature_class = rb_define_class_under(chip_class, "Feature", rb_cObject);
@@ -481,5 +529,7 @@ void Init_lm_sensors()
 	rb_define_method(feature_class, "each", sensors_each_subfeature, 0);
 	rb_define_method(feature_class, "each_subfeature", sensors_each_subfeature, 0);
 	rb_define_method(subfeature_class, "name", sensor_subfeature_name, 0);
+	rb_define_method(subfeature_class, "quantity", sensor_subfeature_quant, 0);
+	rb_define_method(subfeature_class, "unit", sensor_subfeature_unit, 0);
 	rb_define_method(subfeature_class, "value", sensor_subfeature_value, 0);
 }

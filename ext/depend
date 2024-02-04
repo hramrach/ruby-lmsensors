@@ -8,3 +8,7 @@ SED ?= /usr/bin/sed
 %.d: %.c
 	$(Q) $(CC) -M -MG $(INCFLAGS) $(CPPFLAGS) $(CFLAGS) $< | \
 		$(SED) -e 's@^\(.*\)\.o:@$*.d $*.o: Makefile@' > $@
+
+check: test
+test: all
+	$(Q) SENSORS_SYSFS_ROOT=test/data/laptop ruby -I. test/json.rb | jq -S | diff -u test/data/laptop.json -
