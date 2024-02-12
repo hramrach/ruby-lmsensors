@@ -3,6 +3,8 @@
 #include "ruby.h"
 #include "extconf.h"
 
+#define VERSION "0.1"
+
 #if defined(DEBUG)
 #define D 1
 #else
@@ -504,6 +506,7 @@ void Init_lm_sensors()
 	VALUE klass;
 	rb_funcall(rb_cObject, rb_intern("require"), 1, rb_str_new_static_cstr("weakref"));
 	klass = rb_define_class("LMSensors", rb_cObject);
+	rb_define_const(klass, "VERSION", rb_str_new_static_cstr(VERSION));
 	exc_class = rb_define_class_under(klass, "Error", rb_eRuntimeError);
 	rb_define_singleton_method(klass, "version", lm_sensors_version, 0);
 	rb_define_alloc_func(klass, sensors_alloc);
