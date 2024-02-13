@@ -1,6 +1,6 @@
 RUBY ?= ruby
 
-TOPTARGETS := all clean test check
+TOPTARGETS := all clean test check install
 
 SUBDIRS := $(wildcard */.)
 
