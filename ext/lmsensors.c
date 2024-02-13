@@ -501,7 +501,7 @@ static VALUE sensor_subfeature_value(VALUE self)
 	return DBL2NUM(value);
 }
 
-void Init_lm_sensors()
+void Init_lmsensors()
 {
 	VALUE klass;
 	rb_funcall(rb_cObject, rb_intern("require"), 1, rb_str_new_static_cstr("weakref"));

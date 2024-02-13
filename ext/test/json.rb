@@ -1,4 +1,4 @@
-require 'lm_sensors'
+require 'lmsensors'
 
 sensors = LMSensors.new('/dev/null')
 
