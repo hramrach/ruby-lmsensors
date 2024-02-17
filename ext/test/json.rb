@@ -21,8 +21,7 @@ sensors.each{|chip|
     ftr.each{|sub|
       STDOUT.write ',' if has_subfeatures || label
       has_subfeatures = true
-      name = sub.name.gsub(/^#{ftr.name}[-_]?/, '')
-      STDOUT.puts "\"#{name}\":{"
+      STDOUT.puts "\"#{sub.label}\":{"
       quantity = sub.quantity.gsub(/^.* /, '')
       STDOUT.puts "\"quantity\":\"#{quantity}\""
       if sub.unit.length > 0 then

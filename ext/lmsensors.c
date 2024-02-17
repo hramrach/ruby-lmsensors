@@ -495,10 +495,36 @@ static VALUE sensor_subfeature_value(VALUE self)
 	chip_obj = rb_iv_get(self, "parent");
 	chip_obj = rb_iv_get(chip_obj, "parent");
 	TypedData_Get_Struct(chip_obj, sensors_chip_name, &sensor_chip_data, chip);
+	if (D) fprintf(stderr, "%s chip %p\n", __FUNCTION__, chip);
 
 	sensors_get_value_r(config, chip, subfeature->number, &value);
 
 	return DBL2NUM(value);
+}
+
+static VALUE sensor_subfeature_label(VALUE self)
+{
+	const sensors_subfeature *subfeature;
+	const sensors_feature *feature;
+	VALUE feature_obj;
+	const char * fname;
+
+	if (D) dbg_inspect(__FUNCTION__, "self", self);
+
+	TypedData_Get_Struct(self, sensors_subfeature, &sensor_subfeature_data, subfeature);
+	if (D) fprintf(stderr, "%s subfeature %p\n", __FUNCTION__, subfeature);
+	feature_obj = rb_iv_get(self, "parent");
+	TypedData_Get_Struct(feature_obj, sensors_feature, &sensor_feature_data, feature);
+	if (D) fprintf(stderr, "%s feature %p\n", __FUNCTION__, feature);
+
+	fname = subfeature->name;
+	if (strlen(feature->name) < strlen(subfeature->name)) {
+		fname += strlen(feature->name);
+		if (*fname == '_') /* FIXME some sensors use other separator */
+			fname++;
+	}
+
+	return rb_str_new_static_cstr(fname);
 }
 
 void Init_lmsensors()
@@ -535,4 +561,5 @@ void Init_lmsensors()
 	rb_define_method(subfeature_class, "quantity", sensor_subfeature_quant, 0);
 	rb_define_method(subfeature_class, "unit", sensor_subfeature_unit, 0);
 	rb_define_method(subfeature_class, "value", sensor_subfeature_value, 0);
+	rb_define_method(subfeature_class, "label", sensor_subfeature_label, 0);
 }

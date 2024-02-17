@@ -11,4 +11,4 @@ SED ?= /usr/bin/sed
 
 check: test
 test: all
-	$(Q) SENSORS_SYSFS_ROOT=test/data/laptop ruby -I. test/json.rb | jq -S | $(SED) -e 's/[.]0$$//' | diff -u test/data/laptop.json -
+	$(Q) SENSORS_SYSFS_ROOT=test/data/laptop $(RUBY) -I. test/json.rb | jq -S | $(SED) -e 's/[.]0$$//' | diff -u test/data/laptop.json -
