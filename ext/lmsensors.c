@@ -3,7 +3,7 @@
 #include "ruby.h"
 #include "extconf.h"
 
-#define VERSION "0.2"
+#define VERSION "0.3"
 
 #if defined(DEBUG)
 #define D 1
