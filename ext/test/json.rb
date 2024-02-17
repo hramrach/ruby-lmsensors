@@ -29,7 +29,7 @@ sensors.each{|chip|
         STDOUT.puts "\"unit\":\"#{sub.unit}\""
       end
       STDOUT.write ','
-      STDOUT.puts "\"value\":#{sub.value}"
+      STDOUT.puts "\"value\":%.2f" % sub.value
       STDOUT.puts '}'
     }
     STDOUT.puts '}'
